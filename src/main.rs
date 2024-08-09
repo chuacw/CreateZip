@@ -5,7 +5,7 @@
  */
 
 use std::{env};
-use std::fs::{File, remove_file};
+use std::fs::{File, remove_file, rename};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use zip::{write::FileOptions, ZipWriter, CompressionMethod, result::ZipError, read::ZipArchive};
@@ -21,10 +21,17 @@ where F1: Fn(), F2: FnMut(), F3: Fn()
     func3();
 }
 
+/// Get temporary filename in a given directory
+fn get_temp_file_name(directory: String) -> String {
+    let temp_zip_file = NamedTempFile::new_in(directory).unwrap();
+    let temp_zip_file_name = temp_zip_file.path().to_str().unwrap().to_string();
+    temp_zip_file_name
+}
+
 fn add_or_replace_files(zip_file_name: &str, files_to_add: &[PathBuf]) -> zip::result::ZipResult<()> {
     // Create a temporary file to store the modified ZIP contents
-    let temp_zip_file = NamedTempFile::new()?;
-    let temp_zip_file_name = temp_zip_file.path().to_str().unwrap().to_string();
+    let mut temp_zip_file_name = get_temp_file_name(Path::new(zip_file_name).parent().unwrap().to_str().unwrap().to_string());
+    let temp_zip_file = File::create(temp_zip_file_name.clone()).unwrap();
     let mut zip_writer = ZipWriter::new(temp_zip_file);
 
     // Open the existing ZIP file
@@ -32,10 +39,10 @@ fn add_or_replace_files(zip_file_name: &str, files_to_add: &[PathBuf]) -> zip::r
     let mut zip_archive = ZipArchive::new(zip_file)?;
 
     // Collect existing files and their order
-    let mut existing_files = Vec::new();
+    let mut existing_files_within_zip = Vec::new();
     for i in 0..zip_archive.len() {
         let file = zip_archive.by_index(i)?;
-        existing_files.push(file.name().to_string());
+        existing_files_within_zip.push(file.name().to_string());
     }
 
     // Track files to replace
@@ -46,7 +53,7 @@ fn add_or_replace_files(zip_file_name: &str, files_to_add: &[PathBuf]) -> zip::r
 
     // Copy all files from the existing ZIP archive to the new ZIP archive
     // in the original order, but replace files as needed
-    for file_name in existing_files.clone() {
+    for file_name in existing_files_within_zip.clone() {
         if files_to_replace.contains(&file_name) {
             // Replace file
             let file_to_add = files_to_add
@@ -82,7 +89,7 @@ fn add_or_replace_files(zip_file_name: &str, files_to_add: &[PathBuf]) -> zip::r
     // Add any new files that are not already in the zip
     for file_path in files_to_add {
         let file_name = file_path.file_name().unwrap().to_str().unwrap().to_string();
-        if !existing_files.contains(&file_name) {
+        if !existing_files_within_zip.contains(&file_name) {
             call_three_functions(
                 || {
                     print!("Adding {}", file_name.clone().to_string());
@@ -101,13 +108,32 @@ fn add_or_replace_files(zip_file_name: &str, files_to_add: &[PathBuf]) -> zip::r
     }
 
     // Finish the new ZIP file
-    zip_writer.finish()?;
+    let _ = zip_writer.finish();
 
     // Replace the original ZIP file with the modified one
     // drop(zip_writer); // Ensure all data is written to the file
-    remove_file(zip_file_name)?; // Remove the original ZIP file
-    std::fs::rename(temp_zip_file_name, zip_file_name)?; // Rename temp file to original name
 
+    remove_file(zip_file_name)?; // Remove the original ZIP file
+
+    let rename_res = rename(temp_zip_file_name.clone(), zip_file_name); // Rename temp file to original name
+    match rename_res {
+        Ok(_) => {
+            // do nothing
+        },
+        Err(e) => {
+            println!("{:?}", e);
+            let x= e.raw_os_error().unwrap();
+            println!("{:?}", x);
+            // assume it's a CrossesDevices error ->The system cannot move the file to a different disk drive.
+            let copy_res = std::fs::copy(temp_zip_file_name.clone(), zip_file_name);
+            if let Err(e) = copy_res {
+                // Some failure
+                println!("Failure occurred: {:?}", e);
+            } else {
+                std::fs::remove_file(temp_zip_file_name)?;
+            }
+        }
+    }
     Ok(())
 }
 
@@ -187,7 +213,6 @@ fn create_zip_file() -> Result<(), ZipError> {
             }
         }
     }
-
 }
 
 fn main() {
