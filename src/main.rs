@@ -120,15 +120,15 @@ fn create_zip_file() -> Result<(), ZipError> {
             return Ok(());
         },
         _ => {
-            let zip_file_name = &args[1];
-            let path = Path::new(zip_file_name);
+            let zip_filename = &args[1];
+            let zip_filename_path = Path::new(zip_filename);
             match arg_len {
                 2 => {
-                    if path.exists() {
-                        println!("Listing contents of {}", zip_file_name);
+                    if zip_filename_path.exists() {
+                        println!("Listing contents of {}", zip_filename);
                         println!("{}", "-".repeat(40));
 
-                        let file = File::open(zip_file_name)?;
+                        let file = File::open(zip_filename)?;
                         let mut archive = ZipArchive::new(file)?;
 
                         for i in 0..archive.len() {
@@ -140,20 +140,20 @@ fn create_zip_file() -> Result<(), ZipError> {
                     return Ok(());
                 },
                 _ => {
-                    let open_mode = if path.exists() {
+                    let open_mode = if zip_filename_path.exists() {
                         "Updating"
                     } else {
                         "Creating"
                     };
 
-                    println!("{} {}", open_mode, zip_file_name);
-                    println!("{}", "-".repeat(40));
+                    let msg = format!("{} {}", open_mode, zip_filename);
+                    println!("{}", msg);
+                    println!("{}", "-".repeat(msg.len()));
 
-
-                    let fileexists_path = Path::new(path);
-                    match fileexists_path.exists() {
+                    let filepath = Path::new(zip_filename_path);
+                    match filepath.exists() {
                         false => {
-                            let file = File::create(&path)?;
+                            let file = File::create(&zip_filename_path)?;
                             let mut zip = ZipWriter::new(file);
                             let mut files_to_add = Vec::new();
                             for filename in &args[2..] {
@@ -173,19 +173,16 @@ fn create_zip_file() -> Result<(), ZipError> {
                                 }
                             }
                             zip.finish()?;
-                            Ok(())
                         },
                         true => {
                             let mut files_to_add = Vec::new();
                             for filename in &args[2..] {
                                 files_to_add.push(PathBuf::from(filename));
                             }
-                            let _ = add_or_replace_files(zip_file_name, &files_to_add);
-                            Ok(())
+                            let _ = add_or_replace_files(zip_filename, &files_to_add);
                         }
                     }
-
-
+                    Ok(())
                 }
             }
         }
